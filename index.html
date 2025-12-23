@@ -4,83 +4,88 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Shopify CSV a PDF - Convertidor de Catálogos</title>
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body>
   <div id="root"></div>
 
-  <script type="text/babel">
-    const { useState } = React;
+  <script>
+    class ShopifyToPDF {
+      constructor() {
+        this.state = {
+          csvFile: null,
+          origin: 'bionaturesse',
+          isProcessing: false,
+          products: [],
+          error: null
+        };
 
-    function ShopifyToPDF() {
-      const [csvFile, setCsvFile] = useState(null);
-      const [origin, setOrigin] = useState('bionaturesse');
-      const [isProcessing, setIsProcessing] = useState(false);
-      const [products, setProducts] = useState([]);
-      const [error, setError] = useState(null);
+        this.urlPatterns = {
+          naturesse: 'https://naturesse.co/products/',
+          bionaturesse: 'https://bionaturesse.co/products/',
+          eljardindeeva: 'https://eljardindeeva.com/products/'
+        };
 
-      const urlPatterns = {
-        naturesse: 'https://naturesse.co/products/',
-        bionaturesse: 'https://bionaturesse.co/products/',
-        eljardindeeva: 'https://eljardindeeva.com/products/'
-      };
+        this.init();
+      }
 
-      const handleFileChange = (e) => {
-        const file = e.target.files[0];
-        if (file) {
-          setCsvFile(file);
-          setError(null);
-        }
-      };
+      setState(newState) {
+        this.state = { ...this.state, ...newState };
+        this.render();
+      }
 
-      const formatPrice = (price) => {
+      formatPrice(price) {
         if (!price) return '-';
         const numPrice = parseFloat(price);
         if (isNaN(numPrice)) return '-';
         return `$ ${numPrice.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-      };
+      }
 
-      const processCSV = () => {
-        if (!csvFile) {
-          setError('Por favor selecciona un archivo CSV');
+      handleFileChange(e) {
+        const file = e.target.files[0];
+        if (file) {
+          this.setState({ csvFile: file, error: null });
+        }
+      }
+
+      setOrigin(origin) {
+        this.setState({ origin });
+      }
+
+      processCSV() {
+        if (!this.state.csvFile) {
+          this.setState({ error: 'Por favor selecciona un archivo CSV' });
           return;
         }
 
-        setIsProcessing(true);
-        setError(null);
+        this.setState({ isProcessing: true, error: null });
 
-        Papa.parse(csvFile, {
+        Papa.parse(this.state.csvFile, {
           header: true,
           skipEmptyLines: true,
           complete: (results) => {
             try {
-              const processedProducts = processProducts(results.data);
-              setProducts(processedProducts);
-              setIsProcessing(false);
+              const processedProducts = this.processProducts(results.data);
+              this.setState({ products: processedProducts, isProcessing: false });
             } catch (err) {
-              setError(`Error procesando CSV: ${err.message}`);
-              setIsProcessing(false);
+              this.setState({ error: `Error procesando CSV: ${err.message}`, isProcessing: false });
             }
           },
           error: (err) => {
-            setError(`Error leyendo CSV: ${err.message}`);
-            setIsProcessing(false);
+            this.setState({ error: `Error leyendo CSV: ${err.message}`, isProcessing: false });
           }
         });
-      };
+      }
 
-      const processProducts = (data) => {
+      processProducts(data) {
         const productMap = new Map();
         
         data.forEach(row => {
           const handle = row.Handle;
           if (!handle || productMap.has(handle)) return;
           
-          const baseUrl = urlPatterns[origin];
+          const baseUrl = this.urlPatterns[this.state.origin];
           const productUrl = `${baseUrl}${handle}`;
           
           const tags = row.Tags ? row.Tags.split(',').map(t => t.trim()).filter(t => t) : [];
@@ -101,9 +106,9 @@
         });
         
         return Array.from(productMap.values());
-      };
+      }
 
-      const generateHTML = () => {
+      generateHTML() {
         const now = new Date();
         const dateStr = now.toLocaleDateString('es-CO', {
           year: 'numeric',
@@ -114,7 +119,7 @@
           second: '2-digit'
         });
 
-        const productsHTML = products.map(product => {
+        const productsHTML = this.state.products.map(product => {
           const tagsHTML = product.tags.length > 0
             ? `<div class="chips">${product.tags.map(tag => `<span class="chip">${tag}</span>`).join('')}</div>`
             : '-';
@@ -158,7 +163,7 @@
           <tr>
       <th class="label">Precio</th>
       <td class="price">
-        ${formatPrice(product.price)}
+        ${this.formatPrice(product.price)}
       </td>
     </tr>
           <tr><th class="label">Tags</th><td>${tagsHTML}</td></tr>
@@ -171,7 +176,7 @@
       ${bodyContent}
     </div>
     <script type="application/ld+json" class="jsonld">${JSON.stringify(jsonLD, null, 2)}
-    </script>
+    <\/script>
   </section>`;
         }).join('');
 
@@ -208,38 +213,37 @@
   <div class="cover">
     <h1>Catálogo de Productos (para lectura por Agente IA)</h1>
     <div class="meta">Generado: ${dateStr}</div>
-    <div class="meta">Total de productos: ${products.length}</div>
+    <div class="meta">Total de productos: ${this.state.products.length}</div>
   </div>
   ${productsHTML}
 </body></html>`;
-      };
+      }
 
-      const downloadHTML = () => {
-        const html = generateHTML();
+      downloadHTML() {
+        const html = this.generateHTML();
         const blob = new Blob([html], { type: 'text/html' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `catalogo-${origin}-${Date.now()}.html`;
+        a.download = `catalogo-${this.state.origin}-${Date.now()}.html`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-      };
+      }
 
-      const printToPDF = () => {
-        const html = generateHTML();
+      printToPDF() {
+        const html = this.generateHTML();
         const newWindow = window.open('', '_blank');
         
         if (!newWindow) {
-          setError('Por favor permite las ventanas emergentes para generar el PDF');
+          this.setState({ error: 'Por favor permite las ventanas emergentes para generar el PDF' });
           return;
         }
         
         newWindow.document.write(html);
         newWindow.document.close();
         
-        // Esperar a que todas las imágenes se carguen antes de imprimir
         newWindow.onload = () => {
           const images = newWindow.document.getElementsByTagName('img');
           let loadedImages = 0;
@@ -266,153 +270,160 @@
             }
           });
         };
-      };
+      }
 
-      return (
-        <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 p-8">
-          <div className="max-w-4xl mx-auto">
-            <div className="bg-white rounded-2xl shadow-xl p-8">
-              <div className="text-center mb-8">
-                <h1 className="text-4xl font-bold text-gray-800 mb-2">
-                  Shopify CSV a PDF
-                </h1>
-                <p className="text-gray-600">
-                  Convierte tu catálogo de productos en un PDF profesional
-                </p>
-              </div>
+      render() {
+        const root = document.getElementById('root');
+        const { csvFile, origin, isProcessing, products, error } = this.state;
 
-              {/* Selección de origen */}
-              <div className="mb-6">
-                <label className="block text-sm font-semibold text-gray-700 mb-3">
-                  Origen de los productos
-                </label>
-                <div className="grid grid-cols-3 gap-3">
-                  {Object.keys(urlPatterns).map(key => (
-                    <button
-                      key={key}
-                      onClick={() => setOrigin(key)}
-                      className={`px-4 py-3 rounded-lg font-medium transition-all ${
-                        origin === key
-                          ? 'bg-indigo-600 text-white shadow-lg scale-105'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      {key === 'naturesse' && 'Naturesse'}
-                      {key === 'bionaturesse' && 'BioNaturesse'}
-                      {key === 'eljardindeeva' && 'El Jardín de Eva'}
-                    </button>
-                  ))}
+        root.innerHTML = `
+          <div class="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50 p-8">
+            <div class="max-w-4xl mx-auto">
+              <div class="bg-white rounded-2xl shadow-xl p-8">
+                <div class="text-center mb-8">
+                  <h1 class="text-4xl font-bold text-gray-800 mb-2">
+                    Shopify CSV a PDF
+                  </h1>
+                  <p class="text-gray-600">
+                    Convierte tu catálogo de productos en un PDF profesional
+                  </p>
                 </div>
-              </div>
 
-              {/* Selección de archivo */}
-              <div className="mb-6">
-                <label className="block text-sm font-semibold text-gray-700 mb-3">
-                  Archivo CSV de Shopify
-                </label>
-                <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-indigo-400 transition-colors">
-                  <input
-                    type="file"
-                    accept=".csv"
-                    onChange={handleFileChange}
-                    className="hidden"
-                    id="csv-upload"
-                  />
-                  <label htmlFor="csv-upload" className="cursor-pointer">
-                    <div className="text-gray-600 mb-2">
-                      <svg className="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
-                        <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    </div>
-                    <p className="text-sm font-medium text-gray-700">
-                      {csvFile ? csvFile.name : 'Haz clic para seleccionar un archivo CSV'}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Archivo de exportación de productos de Shopify
-                    </p>
+                <!-- Selección de origen -->
+                <div class="mb-6">
+                  <label class="block text-sm font-semibold text-gray-700 mb-3">
+                    Origen de los productos
                   </label>
+                  <div class="grid grid-cols-3 gap-3">
+                    ${Object.keys(this.urlPatterns).map(key => `
+                      <button
+                        onclick="app.setOrigin('${key}')"
+                        class="px-4 py-3 rounded-lg font-medium transition-all ${
+                          origin === key
+                            ? 'bg-indigo-600 text-white shadow-lg scale-105'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        }"
+                      >
+                        ${key === 'naturesse' ? 'Naturesse' : ''}
+                        ${key === 'bionaturesse' ? 'BioNaturesse' : ''}
+                        ${key === 'eljardindeeva' ? 'El Jardín de Eva' : ''}
+                      </button>
+                    `).join('')}
+                  </div>
                 </div>
-              </div>
 
-              {/* Botón de procesamiento */}
-              <button
-                onClick={processCSV}
-                disabled={!csvFile || isProcessing}
-                className="w-full bg-indigo-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors mb-4"
-              >
-                {isProcessing ? 'Procesando...' : 'Procesar CSV'}
-              </button>
-
-              {/* Error */}
-              {error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4">
-                  {error}
-                </div>
-              )}
-
-              {/* Resultados */}
-              {products.length > 0 && (
-                <div className="mt-6 bg-green-50 border border-green-200 rounded-lg p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div>
-                      <h3 className="text-lg font-semibold text-green-800">
-                        ✓ Productos procesados
-                      </h3>
-                      <p className="text-sm text-green-700">
-                        {products.length} producto{products.length !== 1 ? 's' : ''} encontrado{products.length !== 1 ? 's' : ''}
+                <!-- Selección de archivo -->
+                <div class="mb-6">
+                  <label class="block text-sm font-semibold text-gray-700 mb-3">
+                    Archivo CSV de Shopify
+                  </label>
+                  <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-indigo-400 transition-colors">
+                    <input
+                      type="file"
+                      accept=".csv"
+                      onchange="app.handleFileChange(event)"
+                      class="hidden"
+                      id="csv-upload"
+                    />
+                    <label for="csv-upload" class="cursor-pointer">
+                      <div class="text-gray-600 mb-2">
+                        <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                          <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                      </div>
+                      <p class="text-sm font-medium text-gray-700">
+                        ${csvFile ? csvFile.name : 'Haz clic para seleccionar un archivo CSV'}
                       </p>
+                      <p class="text-xs text-gray-500 mt-1">
+                        Archivo de exportación de productos de Shopify
+                      </p>
+                    </label>
+                  </div>
+                </div>
+
+                <!-- Botón de procesamiento -->
+                <button
+                  onclick="app.processCSV()"
+                  ${!csvFile || isProcessing ? 'disabled' : ''}
+                  class="w-full bg-indigo-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-indigo-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors mb-4"
+                >
+                  ${isProcessing ? 'Procesando...' : 'Procesar CSV'}
+                </button>
+
+                <!-- Error -->
+                ${error ? `
+                  <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4">
+                    ${error}
+                  </div>
+                ` : ''}
+
+                <!-- Resultados -->
+                ${products.length > 0 ? `
+                  <div class="mt-6 bg-green-50 border border-green-200 rounded-lg p-6">
+                    <div class="flex items-center justify-between mb-4">
+                      <div>
+                        <h3 class="text-lg font-semibold text-green-800">
+                          ✓ Productos procesados
+                        </h3>
+                        <p class="text-sm text-green-700">
+                          ${products.length} producto${products.length !== 1 ? 's' : ''} encontrado${products.length !== 1 ? 's' : ''}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div class="flex gap-3">
+                      <button
+                        onclick="app.printToPDF()"
+                        class="flex-1 bg-green-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-green-700 transition-colors"
+                      >
+                        📄 Imprimir como PDF
+                      </button>
+                      <button
+                        onclick="app.downloadHTML()"
+                        class="flex-1 bg-blue-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+                      >
+                        💾 Descargar HTML
+                      </button>
+                    </div>
+
+                    <div class="mt-4 text-xs text-green-700">
+                      <p class="font-medium mb-1">Productos procesados:</p>
+                      <ul class="list-disc list-inside space-y-1 max-h-40 overflow-y-auto">
+                        ${products.map(product => `<li>${product.title}</li>`).join('')}
+                      </ul>
                     </div>
                   </div>
+                ` : ''}
 
-                  <div className="flex gap-3">
-                    <button
-                      onClick={printToPDF}
-                      className="flex-1 bg-green-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-green-700 transition-colors"
-                    >
-                      📄 Imprimir como PDF
-                    </button>
-                    <button
-                      onClick={downloadHTML}
-                      className="flex-1 bg-blue-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
-                    >
-                      💾 Descargar HTML
-                    </button>
-                  </div>
-
-                  <div className="mt-4 text-xs text-green-700">
-                    <p className="font-medium mb-1">Productos procesados:</p>
-                    <ul className="list-disc list-inside space-y-1 max-h-40 overflow-y-auto">
-                      {products.map((product, idx) => (
-                        <li key={idx}>{product.title}</li>
-                      ))}
-                    </ul>
-                  </div>
+                <!-- Instrucciones -->
+                <div class="mt-8 bg-gray-50 rounded-lg p-6">
+                  <h3 class="text-sm font-semibold text-gray-700 mb-3">
+                    📋 Instrucciones
+                  </h3>
+                  <ol class="text-sm text-gray-600 space-y-2 list-decimal list-inside">
+                    <li>Selecciona el origen de los productos (Naturesse, BioNaturesse o El Jardín de Eva)</li>
+                    <li>Carga el archivo CSV exportado desde Shopify</li>
+                    <li>Haz clic en "Procesar CSV" para analizar los productos</li>
+                    <li>Usa "Imprimir como PDF" para generar el PDF (usa Ctrl/Cmd + P para guardar)</li>
+                    <li>O descarga el archivo HTML para abrirlo en tu navegador</li>
+                  </ol>
+                  <p class="text-xs text-gray-500 mt-3">
+                    Nota: El sistema solo toma la primera aparición de cada producto (identificado por el Handle) y descarta las líneas duplicadas.
+                  </p>
                 </div>
-              )}
-
-              {/* Instrucciones */}
-              <div className="mt-8 bg-gray-50 rounded-lg p-6">
-                <h3 className="text-sm font-semibold text-gray-700 mb-3">
-                  📋 Instrucciones
-                </h3>
-                <ol className="text-sm text-gray-600 space-y-2 list-decimal list-inside">
-                  <li>Selecciona el origen de los productos (Naturesse, BioNaturesse o El Jardín de Eva)</li>
-                  <li>Carga el archivo CSV exportado desde Shopify</li>
-                  <li>Haz clic en "Procesar CSV" para analizar los productos</li>
-                  <li>Usa "Imprimir como PDF" para generar el PDF (usa Ctrl/Cmd + P para guardar)</li>
-                  <li>O descarga el archivo HTML para abrirlo en tu navegador</li>
-                </ol>
-                <p className="text-xs text-gray-500 mt-3">
-                  Nota: El sistema solo toma la primera aparición de cada producto (identificado por el Handle) y descarta las líneas duplicadas.
-                </p>
               </div>
             </div>
           </div>
-        </div>
-      );
+        `;
+      }
+
+      init() {
+        this.render();
+      }
     }
 
-    ReactDOM.render(<ShopifyToPDF />, document.getElementById('root'));
+    // Inicializar la aplicación
+    const app = new ShopifyToPDF();
   </script>
 </body>
 </html>
